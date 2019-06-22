@@ -10,9 +10,12 @@ import struct
 import binascii
 import serial
 import math
-import time
+import datetime as dt
+import pickle
 
 from tqdm import tqdm
+from collections import namedtuple
+
 
 def enumerate_controllers():
     print('Controllers connected to this system:')
@@ -87,23 +90,29 @@ def controller_states(controller_id):
     except AttributeError:
         print('Using controller {:s} for input.'.format(controller_id))
 
-    while True:
-        buttons = sum([sdl2.SDL_GameControllerGetButton(controller, b)<<n for n,b in enumerate(buttonmapping)])
-        buttons |=  (abs(sdl2.SDL_GameControllerGetAxis(controller, sdl2.SDL_CONTROLLER_AXIS_TRIGGERLEFT)) > trigger_deadzone) << 6
-        buttons |=  (abs(sdl2.SDL_GameControllerGetAxis(controller, sdl2.SDL_CONTROLLER_AXIS_TRIGGERRIGHT)) > trigger_deadzone) << 7
+    start_dttm = dt.datetime.now().timestamp()
 
-        hat = hatcodes[sum([sdl2.SDL_GameControllerGetButton(controller, b)<<n for n,b in enumerate(hatmapping)])]
+    while True:
+        elaped_time = dt.datetime.now().timestamp() - start_dttm
+        buttons = sum([sdl2.SDL_GameControllerGetButton(controller, b) << n for n, b in enumerate(buttonmapping)])
+        buttons |= (abs(sdl2.SDL_GameControllerGetAxis(controller, sdl2.SDL_CONTROLLER_AXIS_TRIGGERLEFT)) > trigger_deadzone) << 6
+        buttons |= (abs(sdl2.SDL_GameControllerGetAxis(controller, sdl2.SDL_CONTROLLER_AXIS_TRIGGERRIGHT)) > trigger_deadzone) << 7
+
+        hat = hatcodes[sum([sdl2.SDL_GameControllerGetButton(controller, b) << n for n, b in enumerate(hatmapping)])]
 
         rawaxis = [sdl2.SDL_GameControllerGetAxis(controller, n) for n in axismapping]
         axis = [((0 if abs(x) < axis_deadzone else x) >> 8) + 128 for x in rawaxis]
 
         rawbytes = struct.pack('>BHBBBB', hat, buttons, *axis)
-        yield binascii.hexlify(rawbytes) + b'\n'
+        message = binascii.hexlify(rawbytes) + b'\n'
+        message_stamp = ControllerStateTime(message, elaped_time)
+        yield message_stamp
 
 
 def replay_states(filename):
     with open(filename, 'rb') as replay:
-        yield from replay.readlines()
+        for line in replay.readlines():
+            yield pickle.loads(line)
 
 
 def example_macro():
@@ -116,8 +125,6 @@ def example_macro():
         ly = int((1.0 + math.cos(2 * math.pi * i / 240)) * 127)
         rawbytes = struct.pack('>BHBBBB', hat, buttons, lx, ly, rx, ry)
         yield binascii.hexlify(rawbytes) + b'\n'
-
-
 
 
 class InputStack(object):
@@ -143,6 +150,7 @@ class InputStack(object):
                 raise StopIteration
 
 
+ControllerStateTime = namedtuple('ControllerStateTime', ('message', 'delta'))
 
 
 if __name__ == '__main__':
@@ -171,7 +179,7 @@ if __name__ == '__main__':
 
     if args.playback is None or args.dontexit:
         live = controller_states(args.controller)
-        next(live) # pull a controller update to make it print the name before starting speed meter
+        next(live)  # pull a controller update to make it print the name before starting speed meter
         input_stack.push(live)
     if args.playback is not None:
         input_stack.push(replay_states(args.playback))
@@ -179,8 +187,8 @@ if __name__ == '__main__':
     with (open(args.record, 'wb') if args.record is not None else contextmanager(lambda: iter([None]))()) as record:
         with tqdm(unit=' updates', disable=args.quiet) as pbar:
             try:
+                start_dttm = dt.datetime.now().timestamp()
                 while True:
-
                     for event in sdl2.ext.get_events():
                         # we have to fetch the events from SDL in order for the controller
                         # state to be updated.
@@ -191,19 +199,22 @@ if __name__ == '__main__':
                         #        input_stack.push(example_macro())
                         # or play from file:
                         #        input_stack.push(replay_states(filename))
-
-                        pass
+                        break
 
                     try:
-                        message = next(input_stack)
-                        ser.write(message)
+                        msg_stamp = next(input_stack)
+                        while True:
+                            elapsed_delta = dt.datetime.now().timestamp() - start_dttm
+                            if msg_stamp.delta < elapsed_delta:
+                                break
+                        ser.write(msg_stamp.message)
                         if record is not None:
-                            record.write(message)
+                            record.write(pickle.dumps(msg_stamp))
                     except StopIteration:
                         break
 
                     # update speed meter on console.
-                    pbar.set_description('Sent {:s}'.format(message[:-1].decode('utf8')))
+                    pbar.set_description('Sent {:s}'.format(msg_stamp.message[:-1].decode('utf8')))
                     pbar.update()
 
                     while True:
