@@ -77,6 +77,8 @@ hatcodes = [8, 0, 2, 1, 4, 8, 3, 8, 6, 7, 8, 8, 5, 8, 8]
 axis_deadzone = 1000
 trigger_deadzone = 0
 
+start_dttm = dt.datetime.now().timestamp()
+
 
 def controller_states(controller_id):
 
@@ -90,8 +92,6 @@ def controller_states(controller_id):
     except AttributeError:
         print('Using controller {:s} for input.'.format(controller_id))
 
-    start_dttm = dt.datetime.now().timestamp()
-
     while True:
         elaped_time = dt.datetime.now().timestamp() - start_dttm
         buttons = sum([sdl2.SDL_GameControllerGetButton(controller, b) << n for n, b in enumerate(buttonmapping)])
@@ -104,15 +104,15 @@ def controller_states(controller_id):
         axis = [((0 if abs(x) < axis_deadzone else x) >> 8) + 128 for x in rawaxis]
 
         rawbytes = struct.pack('>BHBBBB', hat, buttons, *axis)
-        message = binascii.hexlify(rawbytes) + b'\n'
-        message_stamp = ControllerStateTime(message, elaped_time)
+        message_stamp = ControllerStateTime(rawbytes, elaped_time)
         yield message_stamp
 
 
 def replay_states(filename):
     with open(filename, 'rb') as replay:
         for line in replay.readlines():
-            yield pickle.loads(line)
+            # remove new-line character at end of line, and feed it into deserializer
+            yield ControllerStateTime.deserialize(line[:-1])
 
 
 def example_macro():
@@ -124,7 +124,7 @@ def example_macro():
         lx = int((1.0 + math.sin(2 * math.pi * i / 240)) * 127)
         ly = int((1.0 + math.cos(2 * math.pi * i / 240)) * 127)
         rawbytes = struct.pack('>BHBBBB', hat, buttons, lx, ly, rx, ry)
-        yield binascii.hexlify(rawbytes) + b'\n'
+        yield rawbytes
 
 
 class InputStack(object):
@@ -150,7 +150,17 @@ class InputStack(object):
                 raise StopIteration
 
 
-ControllerStateTime = namedtuple('ControllerStateTime', ('message', 'delta'))
+class ControllerStateTime (namedtuple('ControllerStateTime', ('message', 'delta'))):
+    def formatted_message(self):
+        return binascii.hexlify(self.message) + b'\n'
+
+    def serialize(self):
+        return binascii.hexlify(pickle.dumps(self))
+
+    @staticmethod
+    def deserialize(self):
+        return pickle.loads(binascii.unhexlify(self))
+
 
 
 if __name__ == '__main__':
@@ -187,7 +197,6 @@ if __name__ == '__main__':
     with (open(args.record, 'wb') if args.record is not None else contextmanager(lambda: iter([None]))()) as record:
         with tqdm(unit=' updates', disable=args.quiet) as pbar:
             try:
-                start_dttm = dt.datetime.now().timestamp()
                 while True:
                     for event in sdl2.ext.get_events():
                         # we have to fetch the events from SDL in order for the controller
@@ -199,7 +208,7 @@ if __name__ == '__main__':
                         #        input_stack.push(example_macro())
                         # or play from file:
                         #        input_stack.push(replay_states(filename))
-                        break
+                        pass
 
                     try:
                         msg_stamp = next(input_stack)
@@ -207,14 +216,14 @@ if __name__ == '__main__':
                             elapsed_delta = dt.datetime.now().timestamp() - start_dttm
                             if msg_stamp.delta < elapsed_delta:
                                 break
-                        ser.write(msg_stamp.message)
+                        ser.write(msg_stamp.formatted_message())
                         if record is not None:
-                            record.write(pickle.dumps(msg_stamp))
+                            record.write(msg_stamp.serialize() + b'\n')
                     except StopIteration:
                         break
 
                     # update speed meter on console.
-                    pbar.set_description('Sent {:s}'.format(msg_stamp.message[:-1].decode('utf8')))
+                    pbar.set_description('Sent {:s}'.format(msg_stamp.formatted_message()[:-1].decode('utf8')))
                     pbar.update()
 
                     while True:
