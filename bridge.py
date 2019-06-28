@@ -121,10 +121,12 @@ def example_macro():
     rx = 128
     ry = 128
     for i in range(240):
+        elapsed_time = dt.datetime.now().timestamp() - start_dttm
         lx = int((1.0 + math.sin(2 * math.pi * i / 240)) * 127)
         ly = int((1.0 + math.cos(2 * math.pi * i / 240)) * 127)
         rawbytes = struct.pack('>BHBBBB', hat, buttons, lx, ly, rx, ry)
-        yield rawbytes
+        message_stamp = ControllerStateTime(rawbytes, elapsed_time)
+        yield message_stamp
 
 
 class InputStack(object):
@@ -151,6 +153,9 @@ class InputStack(object):
 
 
 class ControllerStateTime (namedtuple('ControllerStateTime', ('message', 'delta'))):
+    """
+    Serializable object responsible for recording a particular input at a particular timestamp
+    """
     def formatted_message(self):
         return binascii.hexlify(self.message) + b'\n'
 
@@ -197,26 +202,32 @@ if __name__ == '__main__':
     with (open(args.record, 'wb') if args.record is not None else contextmanager(lambda: iter([None]))()) as record:
         with tqdm(unit=' updates', disable=args.quiet) as pbar:
             try:
+                prev_msg_stamp = None
                 while True:
                     for event in sdl2.ext.get_events():
                         # we have to fetch the events from SDL in order for the controller
                         # state to be updated.
 
                         # example of running a macro when a joystick button is pressed:
-                        #if event.type == sdl2.SDL_JOYBUTTONDOWN:
-                        #    if event.jbutton.button == 1:
-                        #        input_stack.push(example_macro())
+                        # if event.type == sdl2.SDL_CONTROLLERBUTTONDOWN:
+                        #    # if event.jbutton.button == 1:
+                        #    input_stack.push(example_macro())
                         # or play from file:
                         #        input_stack.push(replay_states(filename))
                         pass
 
                     try:
                         msg_stamp = next(input_stack)
+                        # This this input has aleady been entered, then don't spam the stack
+                        if prev_msg_stamp and msg_stamp.message == prev_msg_stamp.message:
+                            continue
+                        # Wait for the correct amount of time to pass before performing an input
                         while True:
                             elapsed_delta = dt.datetime.now().timestamp() - start_dttm
                             if msg_stamp.delta < elapsed_delta:
                                 break
                         ser.write(msg_stamp.formatted_message())
+                        prev_msg_stamp = msg_stamp
                         if record is not None:
                             record.write(msg_stamp.serialize() + b'\n')
                     except StopIteration:
