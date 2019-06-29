@@ -47,7 +47,7 @@ def init_input_loop(joystick_idx):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-h', '--host', type=str, default='http://localhost:5000', help='Websocket Server Host.')
+    parser.add_argument('-H', '--host', type=str, default='http://localhost:5000', help='Websocket Server Host.')
     parser.add_argument('-c', '--controller', type=str, default='0', help='SDL2 Controller Index')
     args = parser.parse_args()
     host = args.host
