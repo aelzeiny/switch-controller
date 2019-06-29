@@ -6,6 +6,7 @@ import argparse
 
 # standard Python
 sio = socketio.Client()
+host = None
 connected = False
 ser = None
 
@@ -41,14 +42,13 @@ def disconnect():
     while num_tries < 5:
         try:
             print('attempting to reconnect...')
-            sio.connect('http://localhost:5000')
+            sio.connect(host)
         except ConnectionError:
             print('failed...')
             time.sleep(5)
 
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser()
     parser.add_argument('-h', '--host', type=str, default='http://localhost:5000', help='Websocket Server Host.')
     parser.add_argument('-c', '--controller', type=str, default='0', help='Controller to use. Default: 0.')
@@ -56,8 +56,9 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--port', type=str, default='/dev/ttyUSB0', help='Serial port. Default: /dev/ttyUSB0.')
 
     args = parser.parse_args()
+    host = args.host
 
-    sio.connect(args.host)
+    sio.connect(host)
     ser = serial.Serial(args.port, args.baud_rate, bytesize=serial.EIGHTBITS,
                         parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=None)
     print('Using {:s} at {:d} baud for comms.'.format(args.port, args.baud_rate))

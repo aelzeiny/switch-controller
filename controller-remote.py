@@ -2,10 +2,12 @@ import socketio
 from socketio.exceptions import ConnectionError
 import bridge
 import sdl2
+import argparse
 
 # standard Python
 sio = socketio.Client()
 connected = False
+host = None
 
 
 @sio.event
@@ -25,7 +27,7 @@ def disconnect():
     while num_tries < 5:
         try:
             print('attempting to reconnect...')
-            sio.connect('http://localhost:5000')
+            sio.connect(host)
         except ConnectionError:
             print('failed...')
             time.sleep(5)
@@ -44,5 +46,10 @@ def init_input_loop(joystick_idx):
 
 
 if __name__ == '__main__':
-    sio.connect('http://localhost:5000')
-    init_input_loop('0')
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-h', '--host', type=str, default='http://localhost:5000', help='Websocket Server Host.')
+    parser.add_argument('-c', '--controller', type=str, default='0', help='SDL2 Controller Index')
+    args = parser.parse_args()
+    host = args.host
+    sio.connect(host)
+    init_input_loop(args.controller)
