@@ -2,6 +2,7 @@ import socketio
 from socketio.exceptions import ConnectionError
 import bridge
 import sdl2
+import time
 import argparse
 
 # standard Python
@@ -34,13 +35,15 @@ def disconnect():
 
 
 def init_input_loop(joystick_idx):
-    inputs = bridge.controller_states(joystick_idx)
+    inputs = bridge.controller_states(joystick_idx, force_axis=True)
     prev_message = None
+    time.sleep(1)
     while connected:
         sdl2.ext.get_events()
         message_stamp = next(inputs)
-        message = message_stamp.formatted_message()
+        message = message_stamp.message
         if message != prev_message:
+            print(message)
             sio.emit('controller-input', message)
         prev_message = message
 
