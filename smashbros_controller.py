@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
-
-
-import argparse
-from contextlib import contextmanager
-
 import sdl2
 import sdl2.ext
 import struct
-import binascii
 import serial
-import math
 import datetime as dt
-import pickle
 
-from tqdm import tqdm
-from collections import namedtuple
 from enum import IntEnum
 
 from bridge import InputStack, ControllerStateTime, controller_states
@@ -40,7 +30,6 @@ def message(lx=128, ly=128, rx=128, ry=128, *inputs):
 
 class ContinuousAction:
     def __init__(self, title=None):
-
         self.elapsed_sec = 0
         self.actions = []
         self.actions.append(None)
@@ -67,10 +56,17 @@ class ContinuousAction:
         self.actions.append(string)
         return self
 
+    def subroutine(self, function):
+        self.actions.append(function)
+        return self
+
     def play(self):
         for m in self.actions:
             if isinstance(m, str):
                 print('> ', m)
+            elif isinstance(m, callable):
+                print(f'> Running subroutine {m.__name__}')
+                m()
             else:
                 yield m
 
@@ -211,7 +207,6 @@ def reset_practice():
 
 
 if __name__ == '__main__':
-    import os
     macros_dir = '/home/awkii/macros'
     play_actions(
         menu_nav(1, 5, stage_mode=StageMode.FINAL_DESTINATION).play(),
